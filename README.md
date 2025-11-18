@@ -1,98 +1,58 @@
-# 🧾 Comparador de Notas – Posto vs PMM
+# 🚚 Comparador de Notas – Sistema de Auditoria de Abastecimentos
 
-Este script em Python foi desenvolvido para **automatizar a conferência de notas fiscais entre o posto de combustível e o sistema interno da Prefeitura**, já que **a cada fechamento de quinzena costumam ocorrer grandes divergências nos valores registrados**.  
+Um **dashboard completo em Streamlit** para auditar planilhas de abastecimento da Prefeitura (PMM) e do Posto, identificando divergências, inconsistências, consumo por secretaria e gerando relatórios profissionais em PDF e Excel.
 
-O objetivo é facilitar a auditoria, economizar tempo e reduzir erros manuais, garantindo que todas as informações estejam consistentes entre as planilhas do **POSTO** e da **PMM**.
+## 🧾 Funcionalidades Principais
 
----
+### 🔍 1. Comparação entre planilhas POSTO x PMM
+- Detecta diferenças de litragem  
+- Identifica notas presentes só em uma planilha  
+- Detecta tipos de combustível divergentes  
+- Verifica datas inconsistentes  
 
-## ⚙️ Funcionalidades
+### ⚠️ 2. Identificação automática de problemas
+- Notas duplicadas  
+- Litragem negativa  
+- Notas repetidas no mesmo dia  
+- Mesma nota aparecendo em dias diferentes  
+- Itens que aparecem somente em uma planilha  
 
-O programa:
-- 📂 Lê duas planilhas Excel (`POSTO.xlsx` e `PMM.xlsx`);
-- 🔍 Compara os registros de notas com base na coluna `Numero_Nota`;
-- 🚨 Identifica e exibe divergências detalhadas sobre:
-  - Notas que aparecem **apenas em uma das planilhas**;
-  - Diferenças nas **datas de emissão**;
-  - Divergências no **tipo de combustível**;
-  - Variações nos **valores de litragem**;
-- ✅ Exibe um relatório claro diretamente no terminal com todas as inconsistências encontradas.
+### 🏛️ 3. Consumo por Secretaria
+- Gasolina (POSTO / PMM)  
+- Diesel (POSTO / PMM)  
+- Comparação lado a lado  
+- Filtro por setor  
 
----
+### 📊 4. Resumo Executivo
+Mostra rapidamente:
+- Totais de litros  
+- Totais de gasolina e diesel  
+- Quantidade de divergências  
 
-## 🗂️ Estrutura esperada das planilhas
+### 📥 5. Download de Relatórios
+- Excel completo  
+- PDF profissional  
 
-As planilhas devem conter as seguintes colunas:
-
-| Coluna            | Descrição                              |
-|--------------------|----------------------------------------|
-| `Data`             | Data da emissão da nota                |
-| `Numero_Nota`      | Número da nota fiscal (chave de comparação) |
-| `Tipo_Combustivel` | Tipo de combustível (ex: Gasolina, Diesel) |
-| `Litragem`         | Quantidade de litros abastecidos       |
-| `Setor`            | Setor responsável pelo abastecimento   |
-
-> ⚠️ Certifique-se de que os nomes das colunas correspondem exatamente aos definidos no script.
-
----
-
-## 💻 Como usar
-
-1. Coloque os arquivos `POSTO.xlsx` e `PMM.xlsx` na mesma pasta do script `comparador_de_notas.py`.  
-2. Abra um terminal nessa pasta.  
-3. Execute o comando:
-
-```bash
-python comparador_de_notas.py
+## 📁 Estrutura do Projeto
 ```
-O resultado será exibido no terminal, indicando notas faltantes ou divergentes, como no exemplo:
-
-```yaml
-✔ Planilha 'POSTO.xlsx' carregada com 120 registros.
-✔ Planilha 'PMM.xlsx' carregada com 118 registros.
-
---- INICIANDO ANÁLISE DE DIVERGÊNCIAS ---
-
-[AVISO] Notas encontradas APENAS na Planilha POSTO.xlsx:
-  - Data: 05/10/2025 | Nota: 0123 | Litragem: 45.0
-
-[ERRO] Notas com DATAS divergentes:
-  - Nota: 0145 (Setor: Transporte) | Planilha POSTO.xlsx: 10/10/2025 vs Planilha PMM.xlsx: 11/10/2025
-
---- ANÁLISE CONCLUÍDA ---
+comparador-notas/
+├── app.py                
+├── README.md             
+├── POSTO.xlsx            
+├── PMM.xlsx              
+└── requirements.txt      
 ```
 
-🧠 Dependências
+## 🛠️ Tecnologias
+- Python
+- Streamlit
+- Pandas
+- Altair
+- ReportLab
+- OpenPyXL
 
-O programa utiliza as bibliotecas:
-
-pandas
-
-numpy
-
-openpyxl (para leitura de arquivos Excel)
-🧩 Configurações internas
-
-No início do script, é possível alterar os nomes dos arquivos e colunas conforme sua necessidade:
-```python
-ARQUIVO_A = 'planilha_a.xlsx'
-ARQUIVO_B = 'planilha_b.xlsx'
-
-COLUNA_DATA = 'Data'
-COLUNA_NOTA = 'Numero_Nota'
-COLUNA_TIPO = 'Tipo_Combustivel'
-COLUNA_VALOR = 'Litragem'
-COLUNA_SETOR = 'Setor'
+## 🚀 Como Executar
 ```
-
-🧠 Dependências
-
-O programa utiliza as bibliotecas:
-- pandas
-- numpy
-- openpyxl
-
-Instale-as com:
-```python
-pip install pandas numpy openpyxl]
+pip install -r requirements.txt
+streamlit run app.py
 ```
