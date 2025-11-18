@@ -1,9 +1,13 @@
 import pandas as pd
 import numpy as np
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
+from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.lib.pagesizes import A4
 
-#config incial
-ARQUIVO_A = 'planilha_a.xlsx'
-ARQUIVO_B = 'planilha_b.xlsx'
+
+# --- CONFIGURAÇÃO ---
+ARQUIVO_A = 'POSTO.xlsx'
+ARQUIVO_B = 'PMM.xlsx'
 
 COLUNA_DATA = 'Data'
 COLUNA_NOTA = 'Numero_Nota'
@@ -11,19 +15,23 @@ COLUNA_TIPO = 'Tipo_Combustivel'
 COLUNA_VALOR = 'Litragem'
 COLUNA_SETOR = 'Setor'
 
-#auto explicativo ne paizao
+
+# --------------------
+
 def formatar_data(series):
     datas_convertidas = pd.to_datetime(series, errors='coerce')
     return datas_convertidas.dt.strftime('%d/%m/%Y').fillna('Data Inválida/Nula')
 
-#função pra comparar as planlhhas (aqui q vai tudo)
+
+# Substitua sua função 'comparar_planilhas' por esta versão corrigida
+
 def comparar_planilhas():
     try:
-        df_a = pd.read_excel(ARQUIVO_A) #leitura dos xlsx
+        df_a = pd.read_excel(ARQUIVO_A)
         df_b = pd.read_excel(ARQUIVO_B)
 
         print(f"✔ Planilha '{ARQUIVO_A}' carregada com {len(df_a)} registros.")
-        print(f"✔ Planilha '{ARQUIVO_B}' carregada com {len(df_b)} registros.\n") #aqui ja da pra saber se ta errado ou n pela quantidade de registros
+        print(f"✔ Planilha '{ARQUIVO_B}' carregada com {len(df_b)} registros.\n")
 
     except FileNotFoundError as e:
         print(f"❌ ERRO: Arquivo não encontrado! Verifique se o nome '{e.filename}' está correto.")
@@ -33,62 +41,203 @@ def comparar_planilhas():
         return
 
     df_a[COLUNA_NOTA] = df_a[COLUNA_NOTA].astype(str).str.zfill(4)
-    df_b[COLUNA_NOTA] = df_b[COLUNA_NOTA].astype(str).str.zfill(4) #toda a comparação é feita com um total de 4 digitos (ex.: a nota 1 fica 0001, facilitando a comp)
+    df_b[COLUNA_NOTA] = df_b[COLUNA_NOTA].astype(str).str.zfill(4)
 
+    # =====================================================================
+    # 1. VALORES NEGATIVOS E LITRAGENS ANORMALMENTE ALTAS (sem limites fixos)
+    # =====================================================================
+    print("\n--- VERIFICANDO VALORES INVÁLIDOS DE LITRAGEM ---")
+
+    negativos_a = df_a[df_a[COLUNA_VALOR] < 0]
+    negativos_b = df_b[df_b[COLUNA_VALOR] < 0]
+
+    if not negativos_a.empty:
+        print(f"\n[ERRO] Litragens negativas na planilha {ARQUIVO_A}:")
+        for _, row in negativos_a.iterrows():
+            print(f"  - Nota: {row[COLUNA_NOTA]} | Litragem: {row[COLUNA_VALOR]}")
+
+    if not negativos_b.empty:
+        print(f"\n[ERRO] Litragens negativas na planilha {ARQUIVO_B}:")
+        for _, row in negativos_b.iterrows():
+            print(f"  - Nota: {row[COLUNA_NOTA]} | Litragem: {row[COLUNA_VALOR]}")
+
+    # Detectar valores incomuns estatisticamente (acima do percentil 99)
+    limite_alto_a = df_a[COLUNA_VALOR].quantile(0.99)
+    limite_alto_b = df_b[COLUNA_VALOR].quantile(0.99)
+
+    altos_a = df_a[df_a[COLUNA_VALOR] > limite_alto_a]
+    altos_b = df_b[df_b[COLUNA_VALOR] > limite_alto_b]
+
+    if not altos_a.empty:
+        print(f"\n[ALERTA] Litragens incomuns (muito acima do normal) na planilha {ARQUIVO_A}:")
+        for _, row in altos_a.iterrows():
+            print(f"  - Nota: {row[COLUNA_NOTA]} | Litragem: {row[COLUNA_VALOR]}")
+
+    if not altos_b.empty:
+        print(f"\n[ALERTA] Litragens incomuns (muito acima do normal) na planilha {ARQUIVO_B}:")
+        for _, row in altos_b.iterrows():
+            print(f"  - Nota: {row[COLUNA_NOTA]} | Litragem: {row[COLUNA_VALOR]}")
+
+    # =====================================================================
+    # 2. LITROS INCOMPATÍVEIS COM O TIPO (estatístico, sem limites fixos)
+    # =====================================================================
+    print("\n--- ANALISANDO CONSISTÊNCIA ENTRE TIPO DE COMBUSTÍVEL E LITRAGEM ---")
+
+    def analisar_tipo(df, nome_arquivo):
+        for tipo in df[COLUNA_TIPO].dropna().unique():
+            tipo_filtro = str(tipo).upper()
+            subset = df[df[COLUNA_TIPO].str.upper() == tipo_filtro]
+
+            if subset.empty:
+                continue
+
+            media = subset[COLUNA_VALOR].mean()
+
+            # Procurar registros muito fora da média
+            suspeitos = subset[subset[COLUNA_VALOR] > media * 2]
+
+            for _, row in suspeitos.iterrows():
+                print(f"[ALERTA] Litragem fora do padrão do tipo na planilha {nome_arquivo}:")
+                print(f"  - Nota {row[COLUNA_NOTA]} | Tipo: {tipo_filtro} | Litragem: {row[COLUNA_VALOR]} (média: {media:.1f})")
+
+    analisar_tipo(df_a, ARQUIVO_A)
+    analisar_tipo(df_b, ARQUIVO_B)
+
+    # =====================================================================
+    # 3. NOTAS REPETIDAS NO MESMO DIA COM MESMA LITRAGEM
+    # =====================================================================
+    print("\n--- CHECANDO NOTAS DUPLICADAS NO MESMO DIA E MESMA LITRAGEM ---")
+
+    def repetidas_mesmo_dia(df, nome_arquivo):
+        df_aux = df.copy()
+        df_aux['DataFmt'] = pd.to_datetime(df_aux[COLUNA_DATA], errors='coerce').dt.strftime("%d/%m/%Y")
+
+        duplicadas = df_aux[df_aux.duplicated(subset=['DataFmt', COLUNA_NOTA, COLUNA_VALOR], keep=False)]
+
+        if not duplicadas.empty:
+            print(f"\n[ALERTA] Notas repetidas no mesmo dia e com a mesma litragem em {nome_arquivo}:")
+            for _, row in duplicadas.iterrows():
+                print(
+                    f"  - Data: {row['DataFmt']} | Nota: {row[COLUNA_NOTA]} | Litragem: {row[COLUNA_VALOR]}"
+                )
+
+    repetidas_mesmo_dia(df_a, ARQUIVO_A)
+    repetidas_mesmo_dia(df_b, ARQUIVO_B)
+
+    # =====================================================================
+    # 4. MESMA NOTA EM DIAS DIFERENTES
+    # =====================================================================
+    print("\n--- VERIFICANDO MESMA NOTA EM DIAS DIFERENTES ---")
+
+    def nota_em_dias_diferentes(df, nome_arquivo):
+        df_aux = df.copy()
+        df_aux['DataFmt'] = pd.to_datetime(df_aux[COLUNA_DATA], errors='coerce').dt.strftime("%d/%m/%Y")
+
+        conflitos = df_aux.groupby(COLUNA_NOTA)['DataFmt'].nunique()
+        conflitos = conflitos[conflitos > 1]
+
+        if not conflitos.empty:
+            print(f"\n[ERRO] Mesma nota utilizada em dias diferentes na planilha {nome_arquivo}:")
+            for nota in conflitos.index:
+                datas = df_aux[df_aux[COLUNA_NOTA] == nota]['DataFmt'].unique()
+                print(f"  - Nota {nota} usada nas datas: {', '.join(datas)}")
+
+    nota_em_dias_diferentes(df_a, ARQUIVO_A)
+    nota_em_dias_diferentes(df_b, ARQUIVO_B)
+
+    # =====================================================================
+    # 5. MERGE E VERIFICAÇÕES ORIGINAIS
+    # =====================================================================
     df_merged = pd.merge(df_a, df_b, on=COLUNA_NOTA, suffixes=('_A', '_B'), how='outer')
 
-    print("COMEÇANDO A ANÁLISE, MESTRE DO UNIVERSO")
+    print("\n--- INICIANDO ANÁLISE DE DIVERGÊNCIAS ---")
 
-    #faltando nota em um ou em outra
     notas_apenas_em_a = df_merged[df_merged[f'{COLUNA_VALOR}_B'].isnull()]
     notas_apenas_em_b = df_merged[df_merged[f'{COLUNA_VALOR}_A'].isnull()]
 
-    if not notas_apenas_em_a.empty: #melhoe usar o .empty pra otimizar o codigo (isso vale pro resto)
-        print(f"\n[AVISO] Notas encontradas APENAS na Planilha {ARQUIVO_A}:")
-        for index, row in notas_apenas_em_a.iterrows():
-            data_formatada = formatar_data(row[[f'{COLUNA_DATA}_A']]).iloc[0] #formata para DD/MM/AAAA (isso vale pra todas as outras)
+    if not notas_apenas_em_a.empty:
+        print(f"\n[AVISO] Notas APENAS na planilha {ARQUIVO_A}:")
+        for _, row in notas_apenas_em_a.iterrows():
+            data_formatada = formatar_data(pd.Series([row[f'{COLUNA_DATA}_A']])).iloc[0]
             print(f"  - Data: {data_formatada} | Nota: {row[COLUNA_NOTA]} | Litragem: {row[f'{COLUNA_VALOR}_A']}")
 
     if not notas_apenas_em_b.empty:
-        print(f"\n[AVISO] Notas encontradas APENAS na Planilha {ARQUIVO_B}:")
-        for index, row in notas_apenas_em_b.iterrows():
-            data_formatada = formatar_data(row[[f'{COLUNA_DATA}_B']]).iloc[0]
-            print(f"  - Data: {data_formatada} | Nota: {row[COLUNA_NOTA]} | Litragem: {row[f'{COLUNA_VALOR}_B']} (Setor: {row[COLUNA_SETOR]})")
+        print(f"\n[AVISO] Notas APENAS na planilha {ARQUIVO_B}:")
+        for _, row in notas_apenas_em_b.iterrows():
+            data_formatada = formatar_data(pd.Series([row[f'{COLUNA_DATA}_B']])).iloc[0]
+            print(
+                f"  - Data: {data_formatada} | Nota: {row[COLUNA_NOTA]} | Litragem: {row[f'{COLUNA_VALOR}_B']} (Setor: {row[COLUNA_SETOR]})"
+            )
 
     df_comum = df_merged.dropna(subset=[f'{COLUNA_VALOR}_A', f'{COLUNA_VALOR}_B']).copy()
 
-    #data diferentes (geralmente nao influencia mas eh bom ter ne)
+    # DATAS DIVERGENTES
     df_comum[f'{COLUNA_DATA}_A'] = pd.to_datetime(df_comum[f'{COLUNA_DATA}_A'], errors='coerce')
     df_comum[f'{COLUNA_DATA}_B'] = pd.to_datetime(df_comum[f'{COLUNA_DATA}_B'], errors='coerce')
 
     datas_erradas = df_comum[df_comum[f'{COLUNA_DATA}_A'] != df_comum[f'{COLUNA_DATA}_B']]
     if not datas_erradas.empty:
-        print("\n[ERRO] Notas com DATAS divergentes:") #ele rola pelas linhas comparando a as datas das duas planilhas e confirma se estão iguais ou não (mt bom serem inteiras)
-        for index, row in datas_erradas.iterrows():
-            data_a = formatar_data(row[[f'{COLUNA_DATA}_A']]).iloc[0]
-            data_b = formatar_data(row[[f'{COLUNA_DATA}_B']]).iloc[0]
+        print("\n[ERRO] Datas divergentes:")
+        for _, row in datas_erradas.iterrows():
             print(
-                f"  - Nota: {row[COLUNA_NOTA]} (Setor: {row[COLUNA_SETOR]}) | Planilha {ARQUIVO_A}: {data_a} vs Planilha {ARQUIVO_B}: {data_b}")
+                f"  - Nota {row[COLUNA_NOTA]} | "
+                f"{formatar_data(pd.Series([row[f'{COLUNA_DATA}_A']])).iloc[0]} vs "
+                f"{formatar_data(pd.Series([row[f'{COLUNA_DATA}_B']])).iloc[0]}"
+            )
 
-    #tipos de litragem trocados (isso no geral altera muito quanto de dineros está errado)
+    # TIPOS DIVERGENTES
     tipos_trocados = df_comum[df_comum[f'{COLUNA_TIPO}_A'] != df_comum[f'{COLUNA_TIPO}_B']]
     if not tipos_trocados.empty:
-        print("\n[ERRO] Notas com TIPO DE COMBUSTÍVEL divergente:")
-        for index, row in tipos_trocados.iterrows():
-            data_a = formatar_data(row[[f'{COLUNA_DATA}_A']]).iloc[0]
+        print("\n[ERRO] Tipos divergentes:")
+        for _, row in tipos_trocados.iterrows():
             print(
-                f"  - Data: {data_a} | Nota: {row[COLUNA_NOTA]} (Setor: {row[COLUNA_SETOR]}) | Planilha {ARQUIVO_A}: {row[f'{COLUNA_TIPO}_A']} vs Planilha {ARQUIVO_B}: {row[f'{COLUNA_TIPO}_B']}")
+                f"  - Nota {row[COLUNA_NOTA]} | {row[f'{COLUNA_TIPO}_A']} vs {row[f'{COLUNA_TIPO}_B']}"
+            )
 
-    #valor dos litros errados
+    # LITRAGEM DIVERGENTE
     valores_errados = df_comum[~np.isclose(df_comum[f'{COLUNA_VALOR}_A'], df_comum[f'{COLUNA_VALOR}_B'])]
     if not valores_errados.empty:
-        print("\n[ERRO] Notas com LITRAGEM divergente:")
-        for index, row in valores_errados.iterrows():
-            data_a = formatar_data(row[[f'{COLUNA_DATA}_A']]).iloc[0]
+        print("\n[ERRO] Litragem divergente:")
+        for _, row in valores_errados.iterrows():
             print(
-                f"  - Data: {data_a} | Nota: {row[COLUNA_NOTA]} (Setor: {row[COLUNA_SETOR]}) | Planilha {ARQUIVO_A}: {row[f'{COLUNA_VALOR}_A']}L vs Planilha {ARQUIVO_B}: {row[f'{COLUNA_VALOR}_B']}L")
+                f"  - Nota {row[COLUNA_NOTA]} | {row[f'{COLUNA_VALOR}_A']}L vs {row[f'{COLUNA_VALOR}_B']}L"
+            )
 
-    print("\nANÁLISE CONCLUÍDA\n")
+    print("\n--- ANÁLISE CONCLUÍDA ---")
+
+    # =====================================================================
+    # 7. GERAR RELATÓRIO EM PDF
+    # =====================================================================
+    print("Gerando relatório em PDF...")
+
+    styles = getSampleStyleSheet()
+    pdf = SimpleDocTemplate("relatorio_abastecimentos.pdf", pagesize=A4)
+
+    story = []
+
+    def add(titulo, conteudo):
+        story.append(Paragraph(f"<b>{titulo}</b>", styles["Heading3"]))
+        story.append(Paragraph(conteudo, styles["BodyText"]))
+        story.append(Spacer(1, 12))
+
+    add("Resumo Executivo",
+        f"""
+        Total Registros A: {len(df_a)}<br/>
+        Total Registros B: {len(df_b)}<br/>
+        Notas apenas em A: {len(notas_apenas_em_a)}<br/>
+        Notas apenas em B: {len(notas_apenas_em_b)}<br/>
+        Datas Divergentes: {len(datas_erradas)}<br/>
+        Tipos Divergentes: {len(tipos_trocados)}<br/>
+        Litragens Divergentes: {len(valores_errados)}<br/>
+        """)
+
+    add("Observações Importantes",
+        "Este relatório foi gerado automaticamente pelo sistema de auditoria de abastecimentos.")
+
+    pdf.build(story)
+
+    print("📑 PDF 'relatorio_abastecimentos.pdf' gerado com sucesso!")
+
 
 if __name__ == "__main__":
     comparar_planilhas()
